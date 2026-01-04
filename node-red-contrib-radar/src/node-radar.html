@@ -1,0 +1,33 @@
+<script type="text/javascript">
+  RED.nodes.registerType("node-radar", {
+    category: "radar",
+    color: "rgb(51, 204, 204)",
+    defaults: {
+      configFile: {
+        value: "",
+      },
+      name: {
+        value: "",
+      },
+    },
+    inputs: 1,
+    outputs: 1,
+    paletteLabel: "radar",
+    label: function () {
+      return this.name || "radar";
+    },
+  });
+</script>
+
+<script type="text/x-red" data-template-name="node-radar">
+  <div class="form-row">
+      <label for="node-input-configFile"><i class="fa fa-file-code-o"></i> Config File</label>
+      <input type="text" id="node-input-configFile">
+  </div>
+  <div class="form-row">
+      <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+      <input type="text" id="node-input-name">
+  </div>
+</script>
+
+<script type="text/x-red" data-help-name="node-radar"></script>

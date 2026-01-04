@@ -1,0 +1,12 @@
+{
+  "hostname": "esp-radar",
+  "wifi": {
+    "ssid": "Home",
+    "password": ""
+  },
+  "mqtt": {
+    "server": "mqtt://homemedia.lan:1883",
+    "username": "user",
+    "password": ""
+  }
+}

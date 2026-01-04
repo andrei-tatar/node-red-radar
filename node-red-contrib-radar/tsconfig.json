@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "noImplicitAny": true,
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUnusedLocals": true,
+    "outDir": "./build",
+    "skipLibCheck": true
+  },
+  "include": ["src/"],
+  "exclude": ["src/browser"]
+}

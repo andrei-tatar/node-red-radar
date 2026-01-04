@@ -1,0 +1,5 @@
+node_modules/
+build/
+static/*.js
+radar-config.json
+src/local.ts
