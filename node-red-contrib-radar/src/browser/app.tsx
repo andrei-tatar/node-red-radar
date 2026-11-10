@@ -1,159 +1,385 @@
-import { RadarComponent } from "./radar";
-import { EMPTY } from "rxjs";
-import { ZoneComponent } from "./zone";
-import { useRef, useState } from "react";
-import { Zone } from "../common/types";
-import { rpc } from "./ws";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Observable } from "rxjs";
+import { FloorPlan, Point, Radar, Zone } from "../common/types";
+import { retryRpc, rpc, wsStatus$ } from "./ws";
 import { useObservable } from "./util";
+import { MapView } from "./map";
+import { Sidebar } from "./sidebar";
+import { Icon } from "./icons";
+import { Editor, RadarChanges, Selection, Tab, Targets, Tool } from "./model";
+import { contentBounds, uniqueZoneName } from "./geometry";
+
+const NO_ZONES: Zone[] = [];
+const NO_RADARS: Radar[] = [];
 
 export function App({ readonly }: { readonly: boolean }) {
-  const radars = useObservable(rpc.radars.all);
-  const points = useObservable(readonly ? rpc.points : EMPTY, [readonly]);
+  return readonly ? <EmbedView /> : <EditorView />;
+}
+
+/** Read-only live view, for embedding in a dashboard (`?embed`). */
+function EmbedView() {
   const zones = useObservable(rpc.zones.all);
-  const activatedZones = useObservable(rpc.zones.activeZoneIds, []);
-  const [showModal, setShowModal] = useState(false);
-
-  const zonesRef = useRef(zones);
-  zonesRef.current = zones;
-
-  const zoneUpdated = (newZone: Zone) => {
-    const newZones = (zonesRef.current ?? []).map((oldZone) =>
-      oldZone.id === newZone.id ? newZone : oldZone
-    );
-    rpc.zones.update(newZones).subscribe();
-  };
+  const radars = useObservable(rpc.radars.all);
+  const floorPlan = useObservable(rpc.floorPlan.get);
+  const activeIds = useObservable(rpc.zones.activeZoneIds);
+  const points = useObservable(rpc.points);
 
   return (
-    <div>
-      <svg viewBox="-8200,-4000,19500,14200">
-        {/* house */}
-        <g stroke="red" strokeWidth="10px" fill="grey">
-          <path d="M -8013.84 -3928.9L -7143.84 -3928.9L -7143.84 -3458.9L -7543.84 -3458.9L -7543.84 2551.1L -3043.84 2551.1L -3043.84 2751.1L -5693.84 2751.1L -5693.84 3501.1L -6163.84 3501.1L -6163.84 3021.1L -8013.84 3021.1z" />
-          <path d="M 4706.16 341.103L 4706.16 541.103L 1506.16 541.103L 1506.16 341.103L 2456.16 341.103L 2456.16 -3458.9L 1506.16 -3458.9L 1506.16 -3928.9L 3456.16 -3928.9L 3456.16 -3458.9L 2656.16 -3458.9L 2656.16 341.103z" />
-          <path d="M -2243.84 2751.1L -2243.84 2551.1L -1543.84 2551.1L-1543.84 2491.1L-1343.84 2491.1L-1343.84 5251.1L-5693.84 5251.1L-5693.84 7651.1L-6163.84 7651.1L -6163.84 4301.1L -5693.84 4301.1L -5693.84 5051.1L -1543.84 5051.1L -1543.84 2751.1z" />
-          <path d="M -6163.84 10121.1L -5693.84 10121.1L -5693.84 9651.1L -6163.84 9651.1 Z" />
-          <path d="M -1533.84 8151.1L -683.837 8151.1L -683.837 8621.1L -1063.84 8621.1L -1063.84 10121.1L -3893.84 10121.1L -3893.84 9651.1L -1533.84 9651.1 Z" />
-          <path d="M 1316.16 8151.1L 3766.16 8151.1L 3766.16 8621.1L 1316.16 8621.1 Z" />
-          <path d="M 3306.16 1941.1L 3306.16 1741.1L 6606.16 1741.1L 6606.16 1941.1L 6466.16 1941.1L 6466.16 2041.1L 6366.16 2041.1L 6366.16 1941.1L 3866.16 1941.1L 3866.16 3541.1L 6366.16 3541.1L 6366.16 2741.1L 6466.16 2741.1L 6466.16 8151.1L 7566.16 8151.1L 7566.16 8621.1L 5766.16 8621.1L 5766.16 8151.1L 6266.16 8151.1L 6266.16 3741.1L 456.163 3741.1L 456.163 2691.1L 656.163 2691.1L 656.163 3541.1L 1856.16 3541.1L 1856.16 1941.1L 656.163 1941.1L 656.163 1991.1L 456.163 1991.1L 456.163 1741.1L 2606.16 1741.1L 2606.16 1941.1L 1956.16 1941.1L 1956.16 3541.1L 3766.16 3541.1L 3766.16 1941.1 Z" />
-          <path d="M 9556.16 -3458.9L 9556.16 -3928.9L 11136.2 -3928.9L 11136.2 1451.1L 10666.2 1451.1L 10666.2 541.103L 7856.16 541.103L 7856.16 2551.1L 7956.16 2551.1L 7956.16 2651.1L 7756.16 2651.1L 7756.16 1941.1L 7506.16 1941.1L 7506.16 1741.1L 7756.16 1741.1L 7756.16 541.103L 7506.16 541.103L 7506.16 341.103L 10666.2 341.103L 10666.2 -3458.9 Z" />
-          <path d="M 706.163 341.103L 656.163 341.103L 656.163 -3458.9L 706.163 -3458.9L 706.163 -3928.9L 0 -3928.9L 0 -3458.9L 456.163 -3458.9L 456.163 541.103L 706.163 541.103 Z" />
-          <path d="M -1343.84 -3458.9L -1343.84 1691.1L -1543.84 1691.1L -1543.84 -3458.9L -1943.84 -3458.9L -1943.84 -3928.9L -1100 -3928.9L -1100 -3458.9 Z" />
-          <path d="M 5456.16 -3458.9L 5456.16 -3928.9L 7556.16 -3928.9L 7556.16 -3458.9L 6456.16 -3458.9L 6456.16 341.103L 6606.16 341.103L 6606.16 541.103L 5606.16 541.103L 5606.16 341.103L 6256.16 341.103L 6256.16 -3458.9 Z" />
-          <path d="M 8756.16 2551.1L 10666.2 2551.1L 10666.2 2251.1L 11136.2 2251.1L 11136.2 8621.1L 9566.16 8621.1L 9566.16 8151.1L 10666.2 8151.1L 10666.2 2651.1L 8756.16 2651.1 Z" />
-        </g>
+    <MapView
+      readonly
+      loaded={zones !== undefined && floorPlan !== undefined}
+      zones={zones ?? NO_ZONES}
+      radars={radars ?? NO_RADARS}
+      floorPlan={floorPlan ?? null}
+      activeIds={activeIds ?? []}
+      targets={{}}
+      points={points ?? []}
+      selection={null}
+      onSelect={() => {}}
+      tool="select"
+      onToolChange={() => {}}
+      snap={false}
+      onSnapChange={() => {}}
+      editor={NOOP_EDITOR}
+      onZoneDrawn={() => {}}
+      revealNonce={0}
+    />
+  );
+}
 
-        {/* zones */}
-        <g fillOpacity={0.2} strokeWidth={50}>
-          {zones?.map((zone) => (
-            <g
-              key={zone.id}
-              fill={activatedZones?.includes(zone.id) ? "green" : "red"}
-              stroke={activatedZones?.includes(zone.id) ? "green" : "red"}
-            >
-              <ZoneComponent
-                zone={zone}
-                readonly={readonly}
-                zoneUpdated={zoneUpdated}
-              />
-            </g>
-          ))}
-        </g>
+const NOOP_EDITOR: Editor = {
+  updateZones() {},
+  updateRadar() {},
+  removeRadar() {},
+  updateFloorPlan() {},
+};
 
-        {/* radar sensors */}
-        {!readonly &&
-          radars?.map((r) => <RadarComponent key={r.id} radar={r} />)}
+function EditorView() {
+  const serverZones = useObservable(rpc.zones.all);
+  const serverRadars = useObservable(rpc.radars.all);
+  const serverPlan = useObservable(rpc.floorPlan.get);
+  const activeIds = useObservable(rpc.zones.activeZoneIds) ?? [];
+  const status = useObservable(wsStatus$);
 
-        {/* mapped points */}
-        {readonly && (
-          <g fill="red">
-            {points?.map((p, i) => (
-              <circle key={i} cx={p.x} cy={p.y} r={150} />
-            ))}
-          </g>
-        )}
-      </svg>
+  // Local copies: edits show up immediately, and while something is being
+  // dragged, server updates for that collection are held back.
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [radars, setRadars] = useState<Radar[]>([]);
+  const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
+  const server = useRef({ zones: NO_ZONES, radars: NO_RADARS, plan: null as FloorPlan | null });
+  const previewing = useRef({ zones: false, radars: false, plan: false });
 
-      {!readonly && (
-        <div style={{ marginTop: "1rem" }}>
-          <button onClick={() => setShowModal(true)}>Add zone</button>
+  useEffect(() => {
+    if (!serverZones) return;
+    server.current.zones = serverZones;
+    if (!previewing.current.zones) setZones(serverZones);
+  }, [serverZones]);
+  useEffect(() => {
+    if (!serverRadars) return;
+    server.current.radars = serverRadars;
+    if (!previewing.current.radars) setRadars(serverRadars);
+  }, [serverRadars]);
+  useEffect(() => {
+    if (serverPlan === undefined) return;
+    server.current.plan = serverPlan;
+    if (!previewing.current.plan) setFloorPlan(serverPlan);
+  }, [serverPlan]);
+
+  const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
+  const notify = (text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
+  };
+
+  const editor: Editor = useMemo(() => {
+    const send = (call: Observable<unknown>, revert: () => void) =>
+      call.subscribe({
+        error: (err) => {
+          notify(`Couldn't save: ${err?.message ?? err}`);
+          revert();
+        },
+      });
+
+    return {
+      updateZones(next, preview = false) {
+        previewing.current.zones = preview;
+        setZones(next);
+        if (!preview) send(rpc.zones.update(next), () => setZones(server.current.zones));
+      },
+      updateRadar(id, changes: RadarChanges, preview = false) {
+        previewing.current.radars = preview;
+        setRadars((rs) =>
+          rs.map((r) =>
+            r.id !== id
+              ? r
+              : {
+                  ...r,
+                  ...(changes.transform ? { transform: changes.transform } : {}),
+                  ...(changes.name !== undefined ? { name: changes.name || undefined } : {}),
+                }
+          )
+        );
+        if (!preview) {
+          send(rpc.radars.update(id, changes), () => setRadars(server.current.radars));
+        }
+      },
+      removeRadar(id) {
+        setRadars((rs) => rs.filter((r) => r.id !== id));
+        send(rpc.radars.remove(id), () => setRadars(server.current.radars));
+      },
+      updateFloorPlan(plan, preview = false) {
+        previewing.current.plan = preview;
+        setFloorPlan(plan);
+        if (!preview) {
+          send(rpc.floorPlan.update(plan), () => setFloorPlan(server.current.plan));
+        }
+      },
+    };
+  }, []);
+
+  const [selection, setSelection] = useState<Selection>(null);
+  const [revealNonce, setRevealNonce] = useState(0);
+  const [tool, setTool] = useState<Tool>("select");
+  const [tab, setTab] = useState<Tab>("zones");
+  const [snap, setSnap] = useState(() => loadSetting("snap", true));
+  useEffect(() => saveSetting("snap", snap), [snap]);
+
+  const select = (sel: Selection, reveal = false) => {
+    setSelection(sel);
+    if (sel?.kind === "zone") setTab("zones");
+    if (sel?.kind === "radar") setTab("sensors");
+    if (sel?.kind === "plan") setTab("plan");
+    if (reveal) setRevealNonce((n) => n + 1);
+  };
+
+  // drop the selection when its object disappears
+  useEffect(() => {
+    if (
+      (selection?.kind === "zone" && !zones.some((z) => z.id === selection.id)) ||
+      (selection?.kind === "radar" && !radars.some((r) => r.id === selection.id)) ||
+      (selection?.kind === "plan" && !floorPlan)
+    ) {
+      setSelection(null);
+    }
+  }, [zones, radars, floorPlan]);
+
+  const targets = useRadarTargets(radars.map((r) => r.id));
+
+  const onZoneDrawn = (points: Point[]) => {
+    const zone: Zone = {
+      id: uniqueZoneName(zones),
+      points,
+      type: "presence",
+      leaveDelay: 5,
+    };
+    editor.updateZones([...zones, zone]);
+    setTool("select");
+    select({ kind: "zone", id: zone.id });
+  };
+
+  const importFloorPlan = async (file: File, center?: Point) => {
+    try {
+      const b = contentBounds(zones, radars, null);
+      const plan = await readFloorPlan(
+        file,
+        center ?? (b ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 } : { x: 0, y: 0 })
+      );
+      editor.updateFloorPlan(plan);
+      select({ kind: "plan" });
+    } catch (err: any) {
+      notify(err?.message ?? String(err));
+    }
+  };
+
+  const loaded =
+    serverZones !== undefined && serverRadars !== undefined && serverPlan !== undefined;
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">
+            <Icon name="radar" size={18} />
+          </span>
+          <span>
+            <strong>Radar zones</strong>
+            <span className="brand-sub">
+              {zones.length} zones · {radars.length} sensors
+            </span>
+          </span>
         </div>
-      )}
+        <div className="topbar-actions">
+          <ConnectionPill status={status} />
+          <a className="button ghost small" href="?embed" target="_blank" rel="noreferrer">
+            <Icon name="external" size={16} /> Live view
+          </a>
+        </div>
+      </header>
 
-      {/* Simple modal */}
-      {showModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
+      <main className="workspace">
+        <MapView
+          readonly={false}
+          loaded={loaded}
+          zones={zones}
+          radars={radars}
+          floorPlan={floorPlan}
+          activeIds={activeIds}
+          targets={targets}
+          selection={selection}
+          onSelect={select}
+          tool={tool}
+          onToolChange={setTool}
+          snap={snap}
+          onSnapChange={setSnap}
+          editor={editor}
+          onZoneDrawn={onZoneDrawn}
+          onFileDropped={importFloorPlan}
+          revealNonce={revealNonce}
+        />
+        <Sidebar
+          tab={tab}
+          onTabChange={setTab}
+          zones={zones}
+          radars={radars}
+          floorPlan={floorPlan}
+          activeIds={activeIds}
+          targets={targets}
+          selection={selection}
+          onSelect={select}
+          editor={editor}
+          onDrawZone={() => {
+            setTool("draw");
+            setSelection(null);
           }}
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "white",
-              padding: "1rem",
-              borderRadius: 6,
-              minWidth: 320,
-              boxShadow: "0 6px 24px rgba(0,0,0,0.3)",
-            }}
-          >
-            <div style={{ marginBottom: "0.5rem" }}>
-              <label>
-                Zone id:
-                <input
-                  id="zone-id-input"
-                  autoFocus
-                  onInput={(e) => e.currentTarget.setCustomValidity("")}
-                  style={{ marginLeft: "0.5rem", width: "70%" }}
-                />
-              </label>
-            </div>
+          onImportFile={(file) => importFloorPlan(file)}
+        />
+      </main>
 
-            <div
-              style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}
+      <div className="toasts" role="status">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast">
+            {t.text}
+            <button
+              className="icon-button"
+              onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))}
+              aria-label="Dismiss"
             >
-              <button onClick={() => setShowModal(false)}>Cancel</button>
-              <button
-                onClick={() => {
-                  const input = document.getElementById(
-                    "zone-id-input"
-                  )! as HTMLInputElement;
-                  const zoneId = input.value.trim();
-                  if (!zoneId || zones?.some((z) => z.id === zoneId)) {
-                    // zone ids must be unique: they key the zones everywhere
-                    input.setCustomValidity(
-                      zoneId ? "A zone with this id already exists" : "Required"
-                    );
-                    input.reportValidity();
-                    return;
-                  }
-                  setShowModal(false);
-                  const newZones = (zones ?? []).concat([
-                    {
-                      id: zoneId,
-                      points: [
-                        { x: -1000, y: -1000 },
-                        { x: 1000, y: -1000 },
-                        { x: 1000, y: 1000 },
-                        { x: -1000, y: 1000 },
-                      ],
-                    },
-                  ]);
-                  rpc.zones.update(newZones).subscribe();
-                }}
-              >
-                Confirm
-              </button>
-            </div>
+              <Icon name="close" size={14} />
+            </button>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
+}
+
+function ConnectionPill({ status }: { status?: string }) {
+  const label =
+    status === "connected" ? "Live" : status === "connecting" ? "Connecting…" : "Offline";
+  return (
+    <span className={`pill ${status ?? "disconnected"}`} title="Connection to Node-RED">
+      <span className="pill-dot" />
+      {label}
+    </span>
+  );
+}
+
+/** Live targets of every radar, in radar coordinates. */
+function useRadarTargets(ids: string[]): Targets {
+  const [targets, setTargets] = useState<Targets>({});
+  const key = ids.join("\n");
+  useEffect(() => {
+    const subs = ids.map((id) =>
+      rpc.radars
+        .radarTargets(id)
+        .pipe(retryRpc())
+        .subscribe({
+          next: (points) => setTargets((t) => ({ ...t, [id]: points })),
+          error: () => {},
+        })
+    );
+    return () => subs.forEach((s) => s.unsubscribe());
+  }, [key]);
+  return targets;
+}
+
+const MAX_PLAN_BYTES = 8 * 1024 * 1024;
+
+async function readFloorPlan(file: File, center: Point): Promise<FloorPlan> {
+  if (!/^image\/(svg\+xml|png|jpeg|webp|gif)$/.test(file.type)) {
+    throw new Error("Use an SVG, PNG, JPG, WebP or GIF image for the floor plan.");
+  }
+  if (file.size > MAX_PLAN_BYTES) {
+    throw new Error("The floor plan image is larger than 8 MB.");
+  }
+
+  const href = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+  const centered = (width: number, height: number): FloorPlan => ({
+    href,
+    x: Math.round(center.x - width / 2),
+    y: Math.round(center.y - height / 2),
+    width: Math.round(width),
+    height: Math.round(height),
+  });
+
+  if (file.type === "image/svg+xml") {
+    const svg = new DOMParser().parseFromString(await file.text(), "image/svg+xml")
+      .documentElement;
+    const vb = svg
+      .getAttribute("viewBox")
+      ?.trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    // a viewBox is assumed to be in millimetres, like the map
+    if (vb?.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0) {
+      return { href, x: vb[0], y: vb[1], width: vb[2], height: vb[3] };
+    }
+    const w = lengthToMm(svg.getAttribute("width")),
+      h = lengthToMm(svg.getAttribute("height"));
+    if (w && h) {
+      return centered(w, h);
+    }
+  }
+
+  const size = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+    img.onerror = () => reject(new Error("Couldn't read that image."));
+    img.src = href;
+  });
+  // a raster image has no scale: start at 10 m wide, then adjust
+  const width = 10000;
+  return centered(width, (width * size.h) / size.w);
+}
+
+function lengthToMm(value: string | null) {
+  const m = value?.trim().match(/^([\d.]+)\s*(mm|cm|m)?$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const factor = m[2] === "m" ? 1000 : m[2] === "cm" ? 10 : 1;
+  return Number.isFinite(n) && n > 0 ? n * factor : null;
+}
+
+function loadSetting<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(`radar.${key}`);
+    return v === null ? fallback : (JSON.parse(v) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function saveSetting(key: string, value: unknown) {
+  try {
+    localStorage.setItem(`radar.${key}`, JSON.stringify(value));
+  } catch {
+    // storage unavailable
+  }
 }
