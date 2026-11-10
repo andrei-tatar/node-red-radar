@@ -7,6 +7,7 @@
 #include <PsychicMqttClient.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <lwip/sockets.h>
 
 static constexpr const char *CONFIG_PATH = "/config.json";
 
@@ -140,8 +141,29 @@ static bool isValidHostname(const String &name) {
 
 // ---------------------------------------------------------------------------
 
+// lwIP enables Nagle by default: a small publish then waits until the
+// previous one is ACKed. Turn it off on every connected TCP socket (the MQTT
+// connection, plus an OTA upload if one happens to be running).
+static void disableNagle() {
+  for (int fd = LWIP_SOCKET_OFFSET; fd < LWIP_SOCKET_OFFSET + CONFIG_LWIP_MAX_SOCKETS; fd++) {
+    int type;
+    socklen_t len = sizeof(type);
+    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) != 0 || type != SOCK_STREAM) {
+      continue;
+    }
+    sockaddr_storage peer;
+    socklen_t peerLen = sizeof(peer);
+    if (getpeername(fd, (sockaddr *)&peer, &peerLen) != 0) {
+      continue; // not connected, e.g. a listening socket
+    }
+    int one = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+  }
+}
+
 void setup() {
-  setCpuFrequencyMhz(80);
+  // Latency over power: full clock, and no Wi-Fi modem sleep (see below).
+  setCpuFrequencyMhz(240);
 
   // format on first boot so the setup portal can write config.json
   LittleFS.begin(true);
@@ -154,14 +176,19 @@ void setup() {
 
   WiFi.setHostname(hostname.c_str());
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(true);
+  // Modem sleep only listens at DTIM beacons (100-300 ms), which delays the
+  // TCP ACKs the next publish waits for.
+  WiFi.setSleep(false);
   WiFi.begin(ssid.c_str(), password.c_str());
 
   mqtt.setServer(mqttServer.c_str())
       .setCredentials(mqttUser.c_str(), mqttPassword.c_str())
       .setClientId(hostname.c_str())
       .setWill(mqttLastWillTopic.c_str(), 0, true, "false")
-      .onConnect([](bool sessionPresent) { mqtt.publish(mqttLastWillTopic.c_str(), 0, true, "true"); });
+      .onConnect([](bool sessionPresent) {
+        disableNagle();
+        mqtt.publish(mqttLastWillTopic.c_str(), 0, true, "true");
+      });
 
   ArduinoOTA
       .setHostname(hostname.c_str())
@@ -239,8 +266,14 @@ void loop() {
   ArduinoOTA.handle();
   checkConnection();
 
-  auto refreshedTargets = ld2450.read();
-  if (refreshedTargets > 0) {
-    publishTargets(refreshedTargets);
+  // The driver parses one frame per read(). If loop() was held up (e.g. by a
+  // publish), several frames are buffered: drain them and only publish the
+  // newest, instead of working through stale ones one loop at a time.
+  int latestTargets = 0;
+  for (int refreshed; (refreshed = ld2450.read()) > 0;) {
+    latestTargets = refreshed;
+  }
+  if (latestTargets > 0) {
+    publishTargets(latestTargets);
   }
 }

@@ -161,6 +161,10 @@ export class RadarServer {
           map(([radarTargets, transform]) =>
             radarTargets.map((point): Point => applyToPoint(transform, point))
           ),
+          // combineLatest below waits for every radar: start each at "no
+          // points" so a radar whose frames were dropped (e.g. sent before
+          // the config loaded) can't hold back the others
+          startWith([] as Point[]),
           shareLastValue({
             resetOnRefCountZero: () => timer(500),
           })

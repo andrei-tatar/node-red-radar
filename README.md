@@ -41,6 +41,8 @@ Datasheets and the serial protocol are in [`esp-radar/doc/`](esp-radar/doc).
    ```
    To update over the network instead, uncomment `upload_protocol = espota` and `upload_port` in `platformio.ini`.
 
+The firmware is tuned for latency rather than power: it runs at 240 MHz with Wi-Fi power saving off and Nagle disabled on the MQTT connection, so a new target reaches the broker within a few milliseconds of the radar reporting it. For the same reason on the broker side, set `set_tcp_nodelay true` in `mosquitto.conf`.
+
 The device publishes to these MQTT topics:
 
 | Topic | Payload |
