@@ -24,7 +24,7 @@ Datasheets and the serial protocol are in [`esp-radar/doc/`](esp-radar/doc).
 
 ## Firmware (`esp-radar`)
 
-1. Edit `esp-radar/data/config.json`:
+1. Either edit `esp-radar/data/config.json` and flash it (step 2), or skip it and use the setup portal (below):
    ```json
    {
      "hostname": "esp-radar",
@@ -32,7 +32,7 @@ Datasheets and the serial protocol are in [`esp-radar/doc/`](esp-radar/doc).
      "mqtt": { "server": "mqtt://broker.lan:1883", "username": "…", "password": "…" }
    }
    ```
-   If this file is missing or invalid, the device goes into deep sleep and stays there.
+   If this file is missing or invalid, or lacks a hostname, SSID or MQTT server, the device opens a Wi-Fi access point called `esp-radar-setup-XXXX`. Join it and a setup page opens (or browse to `http://192.168.4.1/`). Saving the form writes `config.json` and restarts the device. A blank device flashed without `uploadfs` starts in this mode too.
 2. Build and flash with PlatformIO:
    ```bash
    cd esp-radar
@@ -46,7 +46,7 @@ The device publishes to these MQTT topics:
 | Topic | Payload |
 |---|---|
 | `esp-radar/<hostname>/online` | `true` / `false` (retained, last will) |
-| `esp-radar/<hostname>/state` | `{"targets":[{"id":0,"x":-120,"y":1530,"speed":0}]}`, coordinates in mm, sent every time the radar reports |
+| `esp-radar/<hostname>/state` | `{"targets":[{"id":0,"x":-120,"y":1530,"speed":0}]}`, coordinates in mm. Sent when the targets change, and repeated every 2 s while they don't. |
 
 ## Node-RED node (`node-red-contrib-radar`)
 
@@ -59,24 +59,25 @@ npm install @andrei-tatar/node-red-contrib-radar
 ### Usage
 
 1. Add an **mqtt in** node subscribed to `esp-radar/+/state` (JSON output) and wire it into a **radar** node. The node uses `msg.topic` as the radar ID. A new topic appears in the UI as a new radar.
-2. In the radar node's settings, set the **Config File** where radar placements and zones are stored. The default is `./radar-config.json`, relative to the Node-RED working directory.
-3. Open `http://<node-red-host>:1880/radar/<node-id>/`. Keep the trailing slash: the page builds its WebSocket address from the URL, so it can't connect without it.
-   - Drag and rotate each radar to its real position on the floor plan.
-   - Click **Add zone** and drag the zone's corners into place. Zones turn green while they are occupied.
-   - Add `?embed` to the URL for a read-only view that shows the live targets, for example to embed in a dashboard.
-4. Every time the set of occupied zones changes, the node outputs:
-   ```json
-   {
-     "payload": {
-       "activeZones": ["kitchen"],
-       "activatedZones": ["kitchen"],
-       "deactivatedZones": ["hallway"]
-     }
-   }
-   ```
-   A radar's targets are cleared 5 s after its last message.
+2. Optionally set the radar node's **Config file**, where the floor plan, sensor placements and zones are stored. By default it is `radar-config.json` in the Node-RED user directory. A `radar-config.json` left in the working directory by older versions is still picked up.
+3. Deploy, then click **Open zone editor** in the node's settings. The editor lives at `/radar/<node-id>/` under `httpNodeRoot`; keep the trailing slash.
+   - **Floor plan** tab: import an SVG, PNG or JPG, or drop it on the map. An SVG whose `viewBox` is in millimetres is placed at the right size automatically. Raster images start 10 m wide; use **Adjust on map** or the fields to move and scale them. [`examples/floor-plan.svg`](node-red-contrib-radar/examples/floor-plan.svg) is the plan that used to be built in.
+   - **Sensors**: drag a sensor to move it and drag its round handle to turn it, or type the position and rotation. Name sensors to tell them apart.
+   - **Zones**: click **Draw zone** (or press `Z`), then click corners or drag a rectangle. Select a zone to drag it, drag its corners, drag a **+** on an edge to add a corner, or double-click a corner to remove it. In the sidebar, rename it and set its type and delays.
+   - Snapping (10 cm, 5°) is on by default. Hold `Alt` to bypass it, or press `S` to toggle it. Scroll to zoom, drag the background to pan, and press `F` to fit everything in view.
+   - **Live view** (`?embed`) is a read-only map of zones and targets, for example to embed in a dashboard.
+4. Zone options:
+   - **Enter delay**: presence must last this many seconds before the zone activates.
+   - **Leave delay**: the zone stays active this many seconds after the last target left. The LD2450 can briefly lose someone who sits still, so a few seconds avoids flapping. New zones start with 5 s.
+   - **Exclusion** zones ignore every target inside them, for things like fans, curtains or plants.
+5. Outputs:
+   - **Output 1**, every time the set of occupied zones changes:
+     ```json
+     { "payload": { "activeZones": ["kitchen"], "activatedZones": ["kitchen"], "deactivatedZones": ["hallway"] } }
+     ```
+   - **Output 2**, one message per change: `{ "topic": "kitchen", "payload": true }` when a zone becomes occupied and `false` when it empties. This is easy to route with a switch node.
 
-> The house floor plan is currently hard-coded as SVG paths in `src/browser/app.tsx`. Replace them with your own plan, in millimetres.
+   The node's status shows the occupied zones. A radar's targets are cleared 5 s after its last message.
 
 ### Development
 
