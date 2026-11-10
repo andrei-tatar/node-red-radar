@@ -13,6 +13,8 @@ export function ZoneComponent({
 }) {
   const moveHandle = useRef<SVGPolygonElement>(null);
   const [points, setPoints] = useState(zone.points);
+  // follow changes from the server (another tab, a file edit, a reconnect)
+  useEffect(() => setPoints(zone.points), [zone.points]);
 
   const zoneRef = useRef(zone);
   zoneRef.current = zone;

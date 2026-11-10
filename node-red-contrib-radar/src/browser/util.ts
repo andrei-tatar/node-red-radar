@@ -1,5 +1,6 @@
 import { DependencyList, useState, useEffect } from "react";
 import { Observable } from "rxjs";
+import { retryRpc } from "./ws";
 
 export function useObservable<T>(
   observableOrFactory: (() => Observable<T>) | Observable<T>,
@@ -12,8 +13,10 @@ export function useObservable<T>(
       observableOrFactory instanceof Observable
         ? observableOrFactory
         : observableOrFactory();
-    const sub = observable.subscribe({
+    // retryRpc resubscribes after the socket drops (e.g. a Node-RED redeploy)
+    const sub = observable.pipe(retryRpc()).subscribe({
       next: (v) => setState(v),
+      error: (err) => console.error(err),
     });
     return () => sub.unsubscribe();
   }, deps);

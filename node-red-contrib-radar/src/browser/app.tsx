@@ -44,9 +44,9 @@ export function App({ readonly }: { readonly: boolean }) {
 
         {/* zones */}
         <g fillOpacity={0.2} strokeWidth={50}>
-          {zones?.map((zone, i) => (
+          {zones?.map((zone) => (
             <g
-              key={i}
+              key={zone.id}
               fill={activatedZones?.includes(zone.id) ? "green" : "red"}
               stroke={activatedZones?.includes(zone.id) ? "green" : "red"}
             >
@@ -109,6 +109,7 @@ export function App({ readonly }: { readonly: boolean }) {
                 <input
                   id="zone-id-input"
                   autoFocus
+                  onInput={(e) => e.currentTarget.setCustomValidity("")}
                   style={{ marginLeft: "0.5rem", width: "70%" }}
                 />
               </label>
@@ -120,11 +121,19 @@ export function App({ readonly }: { readonly: boolean }) {
               <button onClick={() => setShowModal(false)}>Cancel</button>
               <button
                 onClick={() => {
-                  setShowModal(false);
                   const input = document.getElementById(
                     "zone-id-input"
                   )! as HTMLInputElement;
-                  const zoneId = input.value;
+                  const zoneId = input.value.trim();
+                  if (!zoneId || zones?.some((z) => z.id === zoneId)) {
+                    // zone ids must be unique: they key the zones everywhere
+                    input.setCustomValidity(
+                      zoneId ? "A zone with this id already exists" : "Required"
+                    );
+                    input.reportValidity();
+                    return;
+                  }
+                  setShowModal(false);
                   const newZones = (zones ?? []).concat([
                     {
                       id: zoneId,

@@ -4,11 +4,11 @@ import {
   defer,
   EMPTY,
   finalize,
+  from,
   isObservable,
   map,
   materialize,
   Observable,
-  of,
   Subscription,
 } from "rxjs";
 import { WebSocketServer } from "ws";
@@ -46,6 +46,22 @@ function createRpcObject(radar: RadarServer): ContractProvider {
   };
 }
 
+function parseClientMessage(data: string): ClientToServerMessage | null {
+  let msg: any;
+  try {
+    msg = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (typeof msg?.id !== "number") {
+    return null;
+  }
+  if (msg.type === "start") {
+    return typeof msg.path === "string" && Array.isArray(msg.args) ? msg : null;
+  }
+  return msg.type === "stop" ? msg : null;
+}
+
 function createFactoryMap(
   provider: ContractProvider,
   prefix: string = "",
@@ -76,7 +92,8 @@ export function createWebSocketServer(
   wss.on("connection", function connection(ws) {
     const subscriptions = new Map<number, Subscription>();
 
-    ws.once("error", (err) => {
+    // `on`, not `once`: an unhandled second "error" event would throw
+    ws.on("error", (err) => {
       console.log("ws-error", err);
     });
 
@@ -87,23 +104,30 @@ export function createWebSocketServer(
     });
 
     ws.on("message", (ev) => {
-      const msg = JSON.parse(ev.toString()) as ClientToServerMessage;
+      const msg = parseClientMessage(ev.toString());
+      if (!msg) {
+        console.warn("radar ws: ignoring malformed message");
+        return;
+      }
 
       switch (msg.type) {
-        case "start":
+        case "start": {
+          subscriptions.get(msg.id)?.unsubscribe();
+
           const stream: Observable<any> = defer(() => {
-            const result = rpcMap.get(msg.path)?.(...msg.args);
+            const method = rpcMap.get(msg.path);
+            if (!method) {
+              throw new Error(`unknown-method: ${msg.path}`);
+            }
+            const result = method(...msg.args);
             if (!isObservable(result)) {
-              return of(result);
+              return from(Promise.resolve(result));
             }
             return result;
           });
 
           const startSubscription = stream
             .pipe(
-              finalize(() => {
-                subscriptions.delete(msg.id);
-              }),
               materialize(),
               concatMap(
                 (v) =>
@@ -111,7 +135,11 @@ export function createWebSocketServer(
                     const txMessage: ServerToClientMessage = {
                       id: msg.id,
                       type: "msg",
-                      payload: v,
+                      // Error objects serialize to {}, so send the message
+                      payload:
+                        v.kind === "E"
+                          ? { ...v, error: { message: v.error?.message ?? String(v.error) } }
+                          : v,
                     };
                     ws.send(JSON.stringify(txMessage), (err) => {
                       if (err) observer.error(err);
@@ -122,29 +150,40 @@ export function createWebSocketServer(
               catchError((err) => {
                 console.error(err);
                 return EMPTY;
+              }),
+              finalize(() => {
+                if (subscriptions.get(msg.id) === startSubscription) {
+                  subscriptions.delete(msg.id);
+                }
               })
             )
             .subscribe();
-          subscriptions.set(msg.id, startSubscription);
+          if (!startSubscription.closed) {
+            subscriptions.set(msg.id, startSubscription);
+          }
           break;
+        }
 
-        case "stop":
+        case "stop": {
           const stopSub = subscriptions.get(msg.id);
           if (stopSub) {
             subscriptions.delete(msg.id);
             stopSub.unsubscribe();
           }
           break;
+        }
       }
     });
   });
 
+  const wsPath = basePath + "/ws";
   const upgradeHandler = function upgrade(
     request: import("node:http").IncomingMessage,
     socket: import("node:stream").Duplex,
     head: Buffer
   ) {
-    if (request.url === basePath + "/ws") {
+    const { pathname } = new URL(request.url ?? "/", "http://localhost");
+    if (pathname === wsPath) {
       wss.handleUpgrade(request, socket, head, function done(ws) {
         wss.emit("connection", ws, request);
       });
@@ -153,7 +192,13 @@ export function createWebSocketServer(
 
   server.on("upgrade", upgradeHandler);
 
-  return () => server.off("upgrade", upgradeHandler);
+  return () => {
+    server.off("upgrade", upgradeHandler);
+    for (const client of wss.clients) {
+      client.terminate();
+    }
+    wss.close();
+  };
 }
 
 export function createServer(radar: RadarServer) {

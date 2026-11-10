@@ -27,9 +27,12 @@ import { shareLastValue } from "../common/util";
 let streamIdHelper = 0;
 const wsStatus = new BehaviorSubject<
   "connecting" | "connected" | "disconnected"
->("connected");
+>("disconnected");
 
 export const wsStatus$ = wsStatus.asObservable();
+
+/** the currently open socket, if any */
+let openWs: WebSocket | undefined;
 
 const proxyCache = new Map<string, object>();
 
@@ -55,6 +58,7 @@ export const rpc = getProxy() as ContractConsumer;
 function rpcExecute(path: string, args: any[]): Observable<any> {
   return defer(() => {
     const streamId = streamIdHelper++;
+    let ended = false;
     return merge(
       send({ type: "start", path, id: streamId, args }),
       rx$.pipe(
@@ -63,8 +67,21 @@ function rpcExecute(path: string, args: any[]): Observable<any> {
         dematerialize()
       )
     ).pipe(
+      tap({
+        error: () => (ended = true),
+        complete: () => (ended = true),
+      }),
       finalize(() => {
-        send({ type: "stop", id: streamId }).subscribe();
+        // only tell the server when we cancel a live stream; sending on a
+        // dead socket would just open a new connection
+        if (!ended && openWs?.readyState === WebSocket.OPEN) {
+          openWs.send(
+            JSON.stringify({
+              type: "stop",
+              id: streamId,
+            } satisfies ClientToServerMessage)
+          );
+        }
       })
     );
   });
@@ -87,12 +104,14 @@ export function retryRpc<T>(): MonoTypeOperatorFunction<T> {
 
 const ws$ = new Observable<WebSocket>((observer) => {
   wsStatus.next("connecting");
-  const addr = `ws://${location.host}${location.pathname}ws`;
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const addr = `${protocol}//${location.host}${location.pathname}ws`;
   console.info(`ws: opening at ${addr}`);
   const ws = new WebSocket(addr);
 
   ws.addEventListener("open", () => {
     console.info(`ws: opened`);
+    openWs = ws;
     observer.next(ws);
     wsStatus.next("connected");
   });
@@ -106,6 +125,9 @@ const ws$ = new Observable<WebSocket>((observer) => {
   });
 
   return () => {
+    if (openWs === ws) {
+      openWs = undefined;
+    }
     wsStatus.next("disconnected");
     ws.close();
   };
