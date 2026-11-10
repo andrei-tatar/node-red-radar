@@ -4,6 +4,8 @@
     "target": "es2022",
     "module": "es2022",
     "jsx": "preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
 
     "noImplicitAny": true,
     "strict": true,

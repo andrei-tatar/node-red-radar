@@ -37,12 +37,12 @@ pio device monitor
 ```bash
 cd node-red-contrib-radar
 npm run build      # clean, then tsc → build/ (+ copies src/*.html), then rollup → static/index.js
-npm run dev        # rollup watch + livereload, plus `tsx watch src/local.ts` (standalone server on :4000)
+npm run dev        # rollup watch + livereload, `tsc --watch` type-checking the UI, and `tsx watch src/local.ts` (standalone server on :4000)
 npm run pub        # build + publish to npmjs
 ```
 
 - `src/local.ts` is the standalone dev harness. It is **gitignored** and holds local MQTT credentials. It creates a `RadarServer` plus an express server on port 4000 and feeds it MQTT messages. Never commit it. If it's missing, `npm run dev` won't start.
-- There are two TS builds with separate tsconfigs. `tsconfig.json` builds the Node side (`src/`, excluding `src/browser`) to `build/` as CommonJS-style `nodenext`. `tsconfig.rollup.json` builds `src/browser/` and bundles it as an IIFE into `static/index.js` (gitignored). `src/common/` is shared by both and must stay free of Node and DOM APIs.
+- There are two TS builds with separate tsconfigs. `tsconfig.json` builds the Node side (`src/`, excluding `src/browser`) to `build/` as CommonJS-style `nodenext`. `tsconfig.rollup.json` only type-checks `src/browser/` (`noEmit`); rollup bundles it as an IIFE into `static/index.js` (gitignored), using `@rollup/plugin-sucrase` to strip types. TypeScript 7 (the native compiler) has no JS API, so `@rollup/plugin-typescript` can't be used; type errors therefore come from the `tsc` step in `build-ui` / `dev-types`, not from rollup. TS 7 also requires `rootDir` in `tsconfig.json`. `src/common/` is shared by both and must stay free of Node and DOM APIs.
 - The published package ships only `build/` and `static/` (`.npmignore`).
 
 ### Architecture

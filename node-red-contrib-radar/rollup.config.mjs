@@ -1,4 +1,4 @@
-import typescript from "@rollup/plugin-typescript";
+import sucrase from "@rollup/plugin-sucrase";
 import nodeResolve from "@rollup/plugin-node-resolve";
 import commonjs from "@rollup/plugin-commonjs";
 import replace from "@rollup/plugin-replace";
@@ -22,17 +22,20 @@ export default {
       preventAssignment: true,
       "process.env.NODE_ENV": JSON.stringify(mode),
     }),
-    typescript({
-      tsconfig: "tsconfig.rollup.json",
-      compilerOptions: {
-        sourceMap: isDevMode,
-      },
+    // strips types only (TypeScript 7 has no JS API for a rollup plugin);
+    // type checking runs separately with tsc. JSX is left to rollup's own
+    // classic transform below.
+    sucrase({
+      include: ["src/**"],
+      transforms: ["typescript", "jsx"],
+      jsxRuntime: "preserve",
     }),
     commonjs({
       include: /node_modules/,
     }),
     nodeResolve({
       browser: true,
+      extensions: [".ts", ".tsx", ".mjs", ".js", ".json"],
     }),
     !isDevMode && terser(),
     isDevMode &&

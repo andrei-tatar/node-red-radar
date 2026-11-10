@@ -5,11 +5,12 @@
   "scripts": {
     "clean": "rm -rf build",
     "build-api": "tsc -p . && cp src/*.html build/",
-    "build-ui": "rm -rf build/browser && npx rollup --config --environment NODE_ENV:production",
+    "build-ui": "rm -rf build/browser && tsc -p tsconfig.rollup.json && npx rollup --config --environment NODE_ENV:production",
     "build": "npm run clean && npm run build-api && npm run build-ui",
     "dev-api": "tsx watch src/local.ts",
     "dev-ui": "npx rollup --config --environment NODE_ENV:development --watch",
-    "dev": "concurrently --kill-others \"npm run dev-ui\" \"npm run dev-api\"",
+    "dev-types": "tsc -p tsconfig.rollup.json --watch --preserveWatchOutput",
+    "dev": "concurrently --kill-others \"npm run dev-ui\" \"npm run dev-api\" \"npm run dev-types\"",
     "pub": "npm run build && npm publish --access=public --registry https://registry.npmjs.org/"
   },
   "keywords": [
@@ -24,28 +25,28 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-replace": "^6.0.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "@rollup/plugin-typescript": "^12.3.0",
-    "@types/express": "^4",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
-    "concurrently": "^9.2.1",
-    "mqtt": "^5.14.1",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
-    "rollup": "^4.53.3",
+    "@rollup/plugin-sucrase": "^5.1.0",
+    "@rollup/plugin-terser": "^1.0.2",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "concurrently": "^10.0.7",
+    "mqtt": "^5.16.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "rollup": "^4.68.2",
     "rollup-plugin-livereload": "^2.0.5",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
-    "express": "^4.22.1",
+    "express": "^5.3.0",
     "rxjs": "^7.8.2",
     "transformation-matrix": "^3.1.0",
-    "ws": "^8.18.3"
+    "ws": "^8.22.2"
   }
 }
