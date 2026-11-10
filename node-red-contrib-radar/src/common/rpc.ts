@@ -1,16 +1,25 @@
 import type { Observable, ObservableInput, ObservableNotification } from "rxjs";
-import { Point, Radar, Zone } from "./types";
+import { FloorPlan, Point, Radar, Zone } from "./types";
 
 export interface Contract {
   radars: {
     all: Define<Radar[]>;
     radarTargets: Define<Point[], [radarId: string]>;
     updateRadarTransform: Define<void, [radarId: string, transform: number[]]>;
+    update: Define<
+      void,
+      [radarId: string, changes: { name?: string; transform?: number[] }]
+    >;
+    remove: Define<void, [radarId: string]>;
   };
   zones: {
     all: Define<Zone[]>;
     activeZoneIds: Define<string[]>;
     update: Define<void, [zones: Zone[]]>;
+  };
+  floorPlan: {
+    get: Define<FloorPlan | null>;
+    update: Define<void, [floorPlan: FloorPlan | null]>;
   };
   points: Define<Point[]>;
 }

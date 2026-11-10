@@ -23,7 +23,13 @@ import {
   timer,
   withLatestFrom,
 } from "rxjs";
-import { Point, Radar, Zone } from "./common/types";
+import {
+  FloorPlan,
+  isPointInsidePolygon,
+  Point,
+  Radar,
+  Zone,
+} from "./common/types";
 import { applyToPoint, identity, Matrix } from "transformation-matrix";
 import { Config, ConfigFile, Logger } from "./config";
 import { shareLastValue } from "./common/util";
@@ -52,6 +58,7 @@ export class RadarServer {
 
   readonly radars$: Observable<Radar[]>;
   readonly zones$: Observable<Zone[]>;
+  readonly floorPlan$: Observable<FloorPlan | null>;
   readonly points$: Observable<Point[]>;
   readonly activeZones$: Observable<ActiveZones>;
 
@@ -126,6 +133,12 @@ export class RadarServer {
       shareLastValue()
     );
 
+    this.floorPlan$ = config$.pipe(
+      map((state) => state.config.floorPlan ?? null),
+      distinctUntilChanged(),
+      shareLastValue()
+    );
+
     this.points$ = this.radarTargets$.pipe(
       map((radarTargets$) => {
         const transform$ = this.radars$.pipe(
@@ -163,15 +176,28 @@ export class RadarServer {
       shareLastValue()
     );
 
-    this.activeZones$ = combineLatest([this.points$, this.zones$]).pipe(
-      map(([points, zones]) =>
-        zones
-          .filter((z) =>
-            points.some((p) => this.isPointInsidePolygon(p, z.points))
-          )
-          .map((z) => z.id)
-          .toSorted()
-      ),
+    // raw presence: which zones contain a target right now, ignoring targets
+    // inside exclusion zones
+    const presence$ = combineLatest([this.points$, this.zones$]).pipe(
+      map(([points, zones]) => {
+        const exclusions = zones.filter((z) => z.type === "exclusion");
+        const counted = points.filter(
+          (p) => !exclusions.some((z) => isPointInsidePolygon(p, z.points))
+        );
+        const present = new Set(
+          zones
+            .filter(
+              (z) =>
+                z.type !== "exclusion" &&
+                counted.some((p) => isPointInsidePolygon(p, z.points))
+            )
+            .map((z) => z.id)
+        );
+        return { zones, present };
+      })
+    );
+
+    this.activeZones$ = applyZoneDelays(presence$).pipe(
       distinctUntilChanged(
         (a, b) =>
           a.length === b.length &&
@@ -261,11 +287,7 @@ export class RadarServer {
   }
 
   async updateRadarTransform(radarId: string, transform: number[]) {
-    if (
-      !Array.isArray(transform) ||
-      transform.length !== 6 ||
-      !transform.every(Number.isFinite)
-    ) {
+    if (!isTransform(transform)) {
       throw new Error("invalid-transform");
     }
 
@@ -282,34 +304,73 @@ export class RadarServer {
     }));
   }
 
+  async updateRadar(
+    radarId: string,
+    changes: { name?: string; transform?: number[] }
+  ) {
+    if (changes?.transform !== undefined && !isTransform(changes.transform)) {
+      throw new Error("invalid-transform");
+    }
+    if (changes?.name !== undefined && typeof changes.name !== "string") {
+      throw new Error("invalid-name");
+    }
+
+    const radars = await firstValueFrom(this.radars$);
+    if (!radars.some((v) => v.id === radarId)) {
+      throw new Error("radar-not-found");
+    }
+
+    this.modifyConfig$.next((config) => ({
+      ...config,
+      radars: config.radars.map((r) => {
+        if (r.id !== radarId) {
+          return r;
+        }
+        const updated: Radar = { ...r };
+        if (changes.transform) {
+          updated.transform = [...changes.transform];
+        }
+        if (changes.name !== undefined) {
+          const name = changes.name.trim();
+          if (name && name !== r.id) {
+            updated.name = name;
+          } else {
+            delete updated.name;
+          }
+        }
+        return updated;
+      }),
+    }));
+  }
+
+  /** Forgets a radar. It is added again if it keeps sending data. */
+  removeRadar(radarId: string) {
+    this.modifyConfig$.next((config) =>
+      config.radars.some((r) => r.id === radarId)
+        ? { ...config, radars: config.radars.filter((r) => r.id !== radarId) }
+        : config
+    );
+  }
+
   updateZones(zones: Zone[]) {
-    if (!Array.isArray(zones) || !zones.every(isZone)) {
+    if (
+      !Array.isArray(zones) ||
+      !zones.every(isZone) ||
+      new Set(zones.map((z) => z.id)).size !== zones.length
+    ) {
       throw new Error("invalid-zones");
     }
     this.modifyConfig$.next((config) => ({ ...config, zones }));
   }
 
-  private isPointInsidePolygon(point: Point, polygonPoints: Point[]) {
-    let inside = false;
-    const { x, y } = point;
-
-    for (
-      let i = 0, j = polygonPoints.length - 1;
-      i < polygonPoints.length;
-      j = i++
-    ) {
-      const xi = polygonPoints[i].x,
-        yi = polygonPoints[i].y;
-      const xj = polygonPoints[j].x,
-        yj = polygonPoints[j].y;
-
-      const intersect =
-        yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-
-      if (intersect) inside = !inside;
+  updateFloorPlan(floorPlan: FloorPlan | null) {
+    if (floorPlan !== null && !isFloorPlan(floorPlan)) {
+      throw new Error("invalid-floor-plan");
     }
-
-    return inside;
+    this.modifyConfig$.next((config) => {
+      const { floorPlan: _old, ...rest } = config;
+      return floorPlan ? { ...rest, floorPlan } : rest;
+    });
   }
 }
 
@@ -317,12 +378,125 @@ function isPoint(p: any): p is Point {
   return Number.isFinite(p?.x) && Number.isFinite(p?.y);
 }
 
+const isDelay = (v: unknown) =>
+  v === undefined || (typeof v === "number" && v >= 0 && v <= 86400);
+
 function isZone(z: any): z is Zone {
   return (
     typeof z?.id === "string" &&
+    z.id.trim() !== "" &&
     Array.isArray(z.points) &&
-    z.points.every(isPoint)
+    z.points.every(isPoint) &&
+    (z.type === undefined || z.type === "presence" || z.type === "exclusion") &&
+    isDelay(z.enterDelay) &&
+    isDelay(z.leaveDelay)
   );
+}
+
+function isTransform(t: unknown): t is number[] {
+  return Array.isArray(t) && t.length === 6 && t.every(Number.isFinite);
+}
+
+function isFloorPlan(f: any): f is FloorPlan {
+  return (
+    typeof f?.href === "string" &&
+    /^(data:image\/(svg\+xml|png|jpeg|gif|webp)[;,]|https?:\/\/|\.?\/)/.test(
+      f.href
+    ) &&
+    [f.x, f.y, f.width, f.height].every(Number.isFinite) &&
+    f.width > 0 &&
+    f.height > 0 &&
+    (f.opacity === undefined ||
+      (typeof f.opacity === "number" && f.opacity >= 0 && f.opacity <= 1))
+  );
+}
+
+/**
+ * Turns raw zone presence into zone activity, honouring each zone's
+ * enterDelay/leaveDelay. Emits the sorted ids of active zones.
+ */
+function applyZoneDelays(
+  presence$: Observable<{ zones: Zone[]; present: Set<string> }>
+): Observable<string[]> {
+  type State = {
+    active: boolean;
+    /** the state we're waiting to switch to */
+    target?: boolean;
+    timer?: ReturnType<typeof setTimeout>;
+  };
+
+  return new Observable<string[]>((observer) => {
+    const states = new Map<string, State>();
+    const emit = () =>
+      observer.next(
+        [...states]
+          .filter(([, s]) => s.active)
+          .map(([id]) => id)
+          .toSorted()
+      );
+    const cancel = (s: State) => {
+      clearTimeout(s.timer);
+      s.timer = s.target = undefined;
+    };
+
+    const subscription = presence$.subscribe({
+      next: ({ zones, present }) => {
+        const tracked = new Set<string>();
+        for (const zone of zones) {
+          if (zone.type === "exclusion") {
+            continue;
+          }
+          tracked.add(zone.id);
+
+          let state = states.get(zone.id);
+          if (!state) {
+            state = { active: false };
+            states.set(zone.id, state);
+          }
+
+          const wanted = present.has(zone.id);
+          if (wanted === state.active) {
+            cancel(state);
+            continue;
+          }
+          if (state.target === wanted) {
+            continue; // already waiting for this
+          }
+
+          cancel(state);
+          const delay = (wanted ? zone.enterDelay : zone.leaveDelay) ?? 0;
+          if (delay > 0) {
+            const s = state;
+            s.target = wanted;
+            s.timer = setTimeout(() => {
+              s.timer = s.target = undefined;
+              s.active = wanted;
+              emit();
+            }, delay * 1000);
+          } else {
+            state.active = wanted;
+          }
+        }
+
+        for (const [id, state] of states) {
+          if (!tracked.has(id)) {
+            cancel(state);
+            states.delete(id);
+          }
+        }
+        emit();
+      },
+      error: (err) => observer.error(err),
+      complete: () => observer.complete(),
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      for (const state of states.values()) {
+        cancel(state);
+      }
+    };
+  });
 }
 
 function parseTargets(payload: unknown): Point[] {

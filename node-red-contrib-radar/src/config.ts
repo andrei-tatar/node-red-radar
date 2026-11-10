@@ -7,11 +7,12 @@ import {
 import { createHash } from "node:crypto";
 import { catchError, concatMap, defer, EMPTY, filter, Observable } from "rxjs";
 
-import { Radar, Zone } from "./common/types";
+import { FloorPlan, Radar, Zone } from "./common/types";
 
 export type Config = {
   zones: Zone[];
   radars: Radar[];
+  floorPlan?: FloorPlan;
 };
 
 export interface Logger {
@@ -32,6 +33,7 @@ function parseConfig(content: string): Config {
   return {
     zones: Array.isArray(parsed.zones) ? parsed.zones : [],
     radars: Array.isArray(parsed.radars) ? parsed.radars : [],
+    ...(parsed.floorPlan ? { floorPlan: parsed.floorPlan } : {}),
   };
 }
 

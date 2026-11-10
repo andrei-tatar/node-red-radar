@@ -36,11 +36,17 @@ function createRpcObject(radar: RadarServer): ContractProvider {
       radarTargets: (radarId: string) => radar.getRadarTargets(radarId),
       updateRadarTransform: (radarId, transform) =>
         radar.updateRadarTransform(radarId, transform),
+      update: (radarId, changes) => radar.updateRadar(radarId, changes),
+      remove: (radarId) => radar.removeRadar(radarId),
     },
     zones: {
       all: () => radar.zones$,
       activeZoneIds: () => radar.activeZones$.pipe(map((v) => v.activeZones)),
       update: (zones) => radar.updateZones(zones),
+    },
+    floorPlan: {
+      get: () => radar.floorPlan$,
+      update: (floorPlan) => radar.updateFloorPlan(floorPlan),
     },
     points: () => radar.points$,
   };
