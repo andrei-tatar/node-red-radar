@@ -94,4 +94,4 @@ npm run dev     # watches the UI with live reload and runs a standalone server o
 
 ## Enclosure (`ld2450_case`)
 
-There are three variants: landscape with a ball mount, portrait with a ball mount, and portrait with a hinge mount. Each one has a front shell, a back cover and a wall mount. They are designed for PETG on a Prusa MK3S+. The designs are SolidCraft `.scd` files, and `prusa-slicer.3mf` holds the current print plate. See [`ld2450_case/CLAUDE.md`](ld2450_case/CLAUDE.md) for details on the designs.
+There are two variants: portrait with a ball mount, and portrait with a hinge mount. The LD2450 sits 6.2 mm behind a 0.8 mm front wall, following the cover guidelines in its manual. Each one has a front shell, a back cover and a wall mount. They are designed for PETG on a Prusa MK3S+. The designs are SolidCraft `.scd` files, and `prusa-slicer.3mf` holds the current print plate. See [`ld2450_case/CLAUDE.md`](ld2450_case/CLAUDE.md) for details on the designs.
