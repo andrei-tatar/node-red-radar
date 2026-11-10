@@ -162,8 +162,9 @@ static void disableNagle() {
 }
 
 void setup() {
-  // Latency over power: full clock, and no Wi-Fi modem sleep (see below).
-  setCpuFrequencyMhz(240);
+  // 80 MHz is plenty for parsing one UART stream and publishing MQTT, and
+  // keeps the case cooler. Wi-Fi modem sleep stays off for latency (see below).
+  setCpuFrequencyMhz(80);
 
   // format on first boot so the setup portal can write config.json
   LittleFS.begin(true);
