@@ -1,6 +1,8 @@
 import { RadarServer } from "./radar";
 import { createRouter, createWebSocketServer } from "./web";
 import { Router, Application } from "express";
+import { existsSync } from "node:fs";
+import { join as pathJoin } from "node:path";
 
 const routerMap = new Map<string, Router>();
 const baseRouter = Router();
@@ -21,6 +23,29 @@ function joinUrlPath(...parts: string[]) {
   return ("/" + parts.join("/")).replace(/\/{2,}/g, "/").replace(/\/$/, "");
 }
 
+/**
+ * An empty setting means radar-config.json in the Node-RED user directory.
+ * Older versions defaulted to the process's working directory, so an existing
+ * file there is still used.
+ */
+function resolveConfigFile(
+  RED: any,
+  configFile: string | undefined,
+  log: (msg: string) => void
+) {
+  if (configFile) {
+    return configFile;
+  }
+  const legacy = "./radar-config.json";
+  if (existsSync(legacy)) {
+    log(
+      `using ${legacy} from the working directory; set "Config file" to make this explicit`
+    );
+    return legacy;
+  }
+  return pathJoin(RED.settings.userDir ?? ".", "radar-config.json");
+}
+
 module.exports = function (RED: any) {
   // RED.httpNode is mounted at settings.httpNodeRoot (false disables it), and
   // RED.httpAdmin at settings.httpAdminRoot. The WebSocket upgrade bypasses
@@ -36,7 +61,9 @@ module.exports = function (RED: any) {
     function (this: NodeInterface, config: any) {
       RED.nodes.createNode(this, config);
 
-      const configFileName = config.configFile || "./radar-config.json";
+      const configFileName = resolveConfigFile(RED, config.configFile, (m) =>
+        this.log(m)
+      );
       const radar = new RadarServer(configFileName, {
         warn: (msg) => this.warn(msg),
       });
@@ -70,7 +97,26 @@ module.exports = function (RED: any) {
       });
 
       const subscription = radar.activeZones$.subscribe({
-        next: (zones) => this.send({ payload: zones }),
+        next: (zones) => {
+          // output 1: the summary; output 2: one message per zone change
+          const perZone: NodeMessage[] = [
+            ...zones.activatedZones.map((id) => ({ topic: id, payload: true })),
+            ...zones.deactivatedZones.map((id) => ({
+              topic: id,
+              payload: false,
+            })),
+          ];
+          this.send([{ payload: zones }, perZone]);
+          this.status(
+            zones.activeZones.length
+              ? {
+                  fill: "green",
+                  shape: "dot",
+                  text: zones.activeZones.join(", "),
+                }
+              : { fill: "grey", shape: "ring", text: "no presence" }
+          );
+        },
         error: (err) => this.error(err),
       });
 
@@ -102,7 +148,7 @@ export interface NodeInterface {
   ): void;
   on(type: "close", callback: (done: () => void) => void): void;
 
-  send(msg: any): void;
+  send(msg: NodeMessage | Array<NodeMessage | NodeMessage[] | null>): void;
 
   log(msg: string): void;
   warn(msg: string): void;

@@ -11,23 +11,89 @@
       },
     },
     inputs: 1,
-    outputs: 1,
+    outputs: 2,
+    outputLabels: ["zone summary", "per-zone changes"],
+    icon: "font-awesome/fa-wifi",
     paletteLabel: "radar",
     label: function () {
       return this.name || "radar";
+    },
+    oneditprepare: function () {
+      var root = (RED.settings.httpNodeRoot || "/").replace(/\/?$/, "/");
+      var url = root + "radar/" + this.id + "/";
+      $("#node-radar-open-editor").attr("href", url);
     },
   });
 </script>
 
 <script type="text/x-red" data-template-name="node-radar">
   <div class="form-row">
-      <label for="node-input-configFile"><i class="fa fa-file-code-o"></i> Config File</label>
-      <input type="text" id="node-input-configFile">
-  </div>
-  <div class="form-row">
       <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
       <input type="text" id="node-input-name">
   </div>
+  <div class="form-row">
+      <label for="node-input-configFile"><i class="fa fa-file-code-o"></i> Config file</label>
+      <input type="text" id="node-input-configFile" placeholder="<userDir>/radar-config.json">
+  </div>
+  <div class="form-row">
+      <label>&nbsp;</label>
+      <a id="node-radar-open-editor" class="red-ui-button" target="_blank">
+        <i class="fa fa-external-link"></i> Open zone editor
+      </a>
+  </div>
+  <div class="form-tips">Deploy the node before opening the editor.</div>
 </script>
 
-<script type="text/x-red" data-help-name="node-radar"></script>
+<script type="text/x-red" data-help-name="node-radar">
+  <p>Maps HLK-LD2450 radar targets onto a floor plan and reports when people
+  enter or leave the zones you draw.</p>
+
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>topic <span class="property-type">string</span></dt>
+    <dd>Identifies the radar. Wire an <code>mqtt in</code> node subscribed to
+    <code>esp-radar/+/state</code>. A radar is added to the map the first time
+    its topic is seen.</dd>
+    <dt>payload <span class="property-type">object | string</span></dt>
+    <dd><code>{"targets": [{"x": mm, "y": mm}, ...]}</code>, relative to the
+    radar, as published by the esp-radar firmware.</dd>
+  </dl>
+
+  <h3>Outputs</h3>
+  <ol class="node-ports">
+    <li>Zone summary
+      <dl class="message-properties">
+        <dt>payload.activeZones <span class="property-type">string[]</span></dt>
+        <dd>All zones that are occupied.</dd>
+        <dt>payload.activatedZones <span class="property-type">string[]</span></dt>
+        <dd>Zones that just became occupied.</dd>
+        <dt>payload.deactivatedZones <span class="property-type">string[]</span></dt>
+        <dd>Zones that just became empty.</dd>
+      </dl>
+    </li>
+    <li>Per-zone changes
+      <dl class="message-properties">
+        <dt>topic <span class="property-type">string</span></dt>
+        <dd>The zone id.</dd>
+        <dt>payload <span class="property-type">boolean</span></dt>
+        <dd><code>true</code> when the zone becomes occupied,
+        <code>false</code> when it becomes empty.</dd>
+      </dl>
+    </li>
+  </ol>
+
+  <h3>Details</h3>
+  <p>Use <b>Open zone editor</b> (or browse to
+  <code>/radar/&lt;node id&gt;/</code> under <code>httpNodeRoot</code>) to
+  import a floor plan, place and rotate the radars, and draw zones. Append
+  <code>?embed</code> for a read-only live view to embed in a dashboard.</p>
+  <p>Each zone can have an <i>enter delay</i> (presence must last that long
+  before the zone activates) and a <i>leave delay</i> (the zone stays active
+  that long after the last target left). The LD2450 can briefly lose a person
+  who sits still, so a leave delay of a few seconds avoids flapping.
+  <i>Exclusion</i> zones ignore every target inside them, e.g. a fan or a
+  curtain.</p>
+  <p>The layout is saved to the config file (by default
+  <code>radar-config.json</code> in the Node-RED user directory). Relative
+  paths are resolved against Node-RED's working directory.</p>
+</script>
