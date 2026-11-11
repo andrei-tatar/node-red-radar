@@ -22,6 +22,15 @@ export interface Logger {
 const hash = (content: string) =>
   createHash("md5").update(content).digest("hex");
 
+/** zone delays were removed; drop them from older config files */
+function dropDelays(zone: any) {
+  if (typeof zone !== "object" || zone === null) {
+    return zone;
+  }
+  const { enterDelay: _enter, leaveDelay: _leave, ...rest } = zone;
+  return rest;
+}
+
 function parseConfig(content: string): Config {
   if (!content.trim()) {
     return { zones: [], radars: [] };
@@ -31,7 +40,7 @@ function parseConfig(content: string): Config {
     throw new Error("expected a JSON object");
   }
   return {
-    zones: Array.isArray(parsed.zones) ? parsed.zones : [],
+    zones: Array.isArray(parsed.zones) ? parsed.zones.map(dropDelays) : [],
     radars: Array.isArray(parsed.radars) ? parsed.radars : [],
     ...(parsed.floorPlan ? { floorPlan: parsed.floorPlan } : {}),
   };

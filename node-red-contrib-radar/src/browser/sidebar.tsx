@@ -167,31 +167,6 @@ function ZoneInspector({
           : "Reports when people enter or leave."}
       </p>
 
-      {!exclusion && (
-        <div className="field-row">
-          <Field label="Enter delay" hint="Presence must last this long.">
-            <NumberInput
-              value={zone.enterDelay ?? 0}
-              min={0}
-              max={3600}
-              step={1}
-              unit="s"
-              onCommit={(enterDelay) => update({ enterDelay })}
-            />
-          </Field>
-          <Field label="Leave delay" hint="Stays occupied this long after.">
-            <NumberInput
-              value={zone.leaveDelay ?? 0}
-              min={0}
-              max={3600}
-              step={1}
-              unit="s"
-              onCommit={(leaveDelay) => update({ leaveDelay })}
-            />
-          </Field>
-        </div>
-      )}
-
       <dl className="facts">
         <dt>Corners</dt>
         <dd>{zone.points.length}</dd>

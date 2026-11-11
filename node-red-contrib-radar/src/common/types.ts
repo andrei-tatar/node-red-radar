@@ -18,10 +18,6 @@ export type Zone = {
   points: Point[];
   /** defaults to "presence" */
   type?: ZoneType;
-  /** seconds a target must stay inside before the zone activates (default 0) */
-  enterDelay?: number;
-  /** seconds the zone stays active after the last target left (default 0) */
-  leaveDelay?: number;
 };
 
 /** An image (SVG or raster, usually a data: URL) placed on the map, in mm. */

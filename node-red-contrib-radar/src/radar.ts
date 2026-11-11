@@ -180,28 +180,23 @@ export class RadarServer {
       shareLastValue()
     );
 
-    // raw presence: which zones contain a target right now, ignoring targets
-    // inside exclusion zones
-    const presence$ = combineLatest([this.points$, this.zones$]).pipe(
+    // which presence zones contain a target right now, ignoring targets
+    // inside exclusion zones. Overlapping zones are all active at once.
+    this.activeZones$ = combineLatest([this.points$, this.zones$]).pipe(
       map(([points, zones]) => {
         const exclusions = zones.filter((z) => z.type === "exclusion");
         const counted = points.filter(
           (p) => !exclusions.some((z) => isPointInsidePolygon(p, z.points))
         );
-        const present = new Set(
-          zones
-            .filter(
-              (z) =>
-                z.type !== "exclusion" &&
-                counted.some((p) => isPointInsidePolygon(p, z.points))
-            )
-            .map((z) => z.id)
-        );
-        return { zones, present };
-      })
-    );
-
-    this.activeZones$ = applyZoneDelays(presence$).pipe(
+        return zones
+          .filter(
+            (z) =>
+              z.type !== "exclusion" &&
+              counted.some((p) => isPointInsidePolygon(p, z.points))
+          )
+          .map((z) => z.id)
+          .sort();
+      }),
       distinctUntilChanged(
         (a, b) =>
           a.length === b.length &&
@@ -382,18 +377,13 @@ function isPoint(p: any): p is Point {
   return Number.isFinite(p?.x) && Number.isFinite(p?.y);
 }
 
-const isDelay = (v: unknown) =>
-  v === undefined || (typeof v === "number" && v >= 0 && v <= 86400);
-
 function isZone(z: any): z is Zone {
   return (
     typeof z?.id === "string" &&
     z.id.trim() !== "" &&
     Array.isArray(z.points) &&
     z.points.every(isPoint) &&
-    (z.type === undefined || z.type === "presence" || z.type === "exclusion") &&
-    isDelay(z.enterDelay) &&
-    isDelay(z.leaveDelay)
+    (z.type === undefined || z.type === "presence" || z.type === "exclusion")
   );
 }
 
@@ -413,94 +403,6 @@ function isFloorPlan(f: any): f is FloorPlan {
     (f.opacity === undefined ||
       (typeof f.opacity === "number" && f.opacity >= 0 && f.opacity <= 1))
   );
-}
-
-/**
- * Turns raw zone presence into zone activity, honouring each zone's
- * enterDelay/leaveDelay. Emits the sorted ids of active zones.
- */
-function applyZoneDelays(
-  presence$: Observable<{ zones: Zone[]; present: Set<string> }>
-): Observable<string[]> {
-  type State = {
-    active: boolean;
-    /** the state we're waiting to switch to */
-    target?: boolean;
-    timer?: ReturnType<typeof setTimeout>;
-  };
-
-  return new Observable<string[]>((observer) => {
-    const states = new Map<string, State>();
-    const emit = () =>
-      observer.next(
-        [...states]
-          .filter(([, s]) => s.active)
-          .map(([id]) => id)
-          .toSorted()
-      );
-    const cancel = (s: State) => {
-      clearTimeout(s.timer);
-      s.timer = s.target = undefined;
-    };
-
-    const subscription = presence$.subscribe({
-      next: ({ zones, present }) => {
-        const tracked = new Set<string>();
-        for (const zone of zones) {
-          if (zone.type === "exclusion") {
-            continue;
-          }
-          tracked.add(zone.id);
-
-          let state = states.get(zone.id);
-          if (!state) {
-            state = { active: false };
-            states.set(zone.id, state);
-          }
-
-          const wanted = present.has(zone.id);
-          if (wanted === state.active) {
-            cancel(state);
-            continue;
-          }
-          if (state.target === wanted) {
-            continue; // already waiting for this
-          }
-
-          cancel(state);
-          const delay = (wanted ? zone.enterDelay : zone.leaveDelay) ?? 0;
-          if (delay > 0) {
-            const s = state;
-            s.target = wanted;
-            s.timer = setTimeout(() => {
-              s.timer = s.target = undefined;
-              s.active = wanted;
-              emit();
-            }, delay * 1000);
-          } else {
-            state.active = wanted;
-          }
-        }
-
-        for (const [id, state] of states) {
-          if (!tracked.has(id)) {
-            cancel(state);
-            states.delete(id);
-          }
-        }
-        emit();
-      },
-      error: (err) => observer.error(err),
-      complete: () => observer.complete(),
-    });
-
-    return () => {
-      subscription.unsubscribe();
-      for (const state of states.values()) {
-        cancel(state);
-      }
-    };
-  });
 }
 
 function parseTargets(payload: unknown): Point[] {

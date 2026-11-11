@@ -65,12 +65,11 @@ npm install @andrei-tatar/node-red-contrib-radar
 3. Deploy, then click **Open zone editor** in the node's settings. The editor lives at `/radar/<node-id>/` under `httpNodeRoot`; keep the trailing slash.
    - **Floor plan** tab: import an SVG, PNG or JPG, or drop it on the map. An SVG whose `viewBox` is in millimetres is placed at the right size automatically. Raster images start 10 m wide; use **Adjust on map** or the fields to move and scale them. [`examples/floor-plan.svg`](node-red-contrib-radar/examples/floor-plan.svg) is the plan that used to be built in.
    - **Sensors**: drag a sensor to move it and drag its round handle to turn it, or type the position and rotation. Name sensors to tell them apart.
-   - **Zones**: click **Draw zone** (or press `Z`), then click corners or drag a rectangle. Select a zone to drag it, drag its corners, drag a **+** on an edge to add a corner, or double-click a corner to remove it. In the sidebar, rename it and set its type and delays.
+   - **Zones**: click **Draw zone** (or press `Z`), then click corners or drag a rectangle. Select a zone to drag it, drag its corners, drag a **+** on an edge to add a corner, or double-click a corner to remove it. In the sidebar, rename it and set its type.
    - Snapping (10 cm, 5°) is on by default. Hold `Alt` to bypass it, or press `S` to toggle it. Scroll to zoom, drag the background to pan, and press `F` to fit everything in view.
    - **Live view** (`?embed`) is a read-only map of zones and targets, for example to embed in a dashboard.
 4. Zone options:
-   - **Enter delay**: presence must last this many seconds before the zone activates.
-   - **Leave delay**: the zone stays active this many seconds after the last target left. The LD2450 can briefly lose someone who sits still, so a few seconds avoids flapping. New zones start with 5 s.
+   - A zone is active while a target is inside it, with no delay. Overlapping zones are all active at once. Debounce and prioritise in the flow (e.g. a `trigger` node); the LD2450 can briefly lose someone who sits still, so a few seconds of off-delay avoids flapping.
    - **Exclusion** zones ignore every target inside them, for things like fans, curtains or plants.
 5. Outputs:
    - **Output 1**, every time the set of occupied zones changes:

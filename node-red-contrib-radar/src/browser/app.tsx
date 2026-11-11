@@ -171,7 +171,6 @@ function EditorView() {
       id: uniqueZoneName(zones),
       points,
       type: "presence",
-      leaveDelay: 5,
     };
     editor.updateZones([...zones, zone]);
     setTool("select");

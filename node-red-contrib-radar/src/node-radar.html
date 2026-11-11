@@ -87,10 +87,10 @@
   <code>/radar/&lt;node id&gt;/</code> under <code>httpNodeRoot</code>) to
   import a floor plan, place and rotate the radars, and draw zones. Append
   <code>?embed</code> for a read-only live view to embed in a dashboard.</p>
-  <p>Each zone can have an <i>enter delay</i> (presence must last that long
-  before the zone activates) and a <i>leave delay</i> (the zone stays active
-  that long after the last target left). The LD2450 can briefly lose a person
-  who sits still, so a leave delay of a few seconds avoids flapping.
+  <p>A zone is active while a target is inside it, with no delay; when zones
+  overlap, all of them are active. Debounce and prioritise in the flow, e.g.
+  with a <code>trigger</code> node. The LD2450 can briefly lose a person who
+  sits still, so a short off-delay there avoids flapping.
   <i>Exclusion</i> zones ignore every target inside them, e.g. a fan or a
   curtain.</p>
   <p>The layout is saved to the config file (by default
