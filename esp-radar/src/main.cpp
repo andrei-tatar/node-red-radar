@@ -9,6 +9,10 @@
 #include <WiFi.h>
 #include <lwip/sockets.h>
 
+// ESP32 pins wired to the LD2450's UART.
+#define RADAR_RX_PIN 7
+#define RADAR_TX_PIN 9
+
 static constexpr const char *CONFIG_PATH = "/config.json";
 
 // Frames identical to the previous one are skipped, but the current state is
@@ -196,7 +200,7 @@ void setup() {
       .setMdnsEnabled(false)
       .begin();
 
-  Serial1.begin(256000, SERIAL_8N1, 7, 9);
+  Serial1.begin(256000, SERIAL_8N1, RADAR_RX_PIN, RADAR_TX_PIN);
   ld2450.begin(Serial1);
 }
 
